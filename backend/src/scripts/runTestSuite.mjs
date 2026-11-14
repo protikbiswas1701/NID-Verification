@@ -61,6 +61,7 @@ const runTests = async () => {
   assert(res3.verdict === 'SUSPECTED_FAKE', 'Card 3 is SUSPECTED_FAKE');
   assert(res3.isGenuine === false, 'Card 3 is marked non-genuine');
   assert(res3.fraudIndicators.length > 0, 'Card 3 flagged with fraud indicators');
+  assert(typeof res3.forensics?.elaHeatmapBase64 === 'string' && res3.forensics.elaHeatmapBase64.length > 1000, 'Card 3 generates ELA forensic heatmap preview');
 
   const card4 = path.join(samplesDir, '4_fake_year_prefix_mismatch.jpg');
   console.log(`Testing 17-digit prefix mismatch card: ${path.basename(card4)}...`);

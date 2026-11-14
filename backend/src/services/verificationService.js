@@ -249,6 +249,7 @@ export const analyzeImageForensics = async (imagePath) => {
 
     let elaScore = 0;
     let elaTamperingDetected = false;
+    let elaHeatmapBase64 = null;
 
     try {
       const recompressedBuffer = await image.getBuffer('image/jpeg', { quality: 90 });
@@ -284,6 +285,31 @@ export const analyzeImageForensics = async (imagePath) => {
       if (diffStdDev > 16.5) {
         elaTamperingDetected = true;
       }
+
+      // Generate visual ELA forensic heatmap preview (cloned & scaled to max width 500)
+      try {
+        const preview = image.clone();
+        if (preview.bitmap.width > 500) {
+          preview.resize({ w: 500 });
+        }
+        const pw = preview.bitmap.width;
+        const ph = preview.bitmap.height;
+        const prevRecompBuf = await preview.getBuffer('image/jpeg', { quality: 90 });
+        const prevRecomp = await Jimp.read(prevRecompBuf);
+
+        preview.scan(0, 0, pw, ph, function(x, y, idx) {
+          const dR = Math.min(255, Math.abs(this.bitmap.data[idx] - prevRecomp.bitmap.data[idx]) * 22);
+          const dG = Math.min(255, Math.abs(this.bitmap.data[idx + 1] - prevRecomp.bitmap.data[idx + 1]) * 22);
+          const dB = Math.min(255, Math.abs(this.bitmap.data[idx + 2] - prevRecomp.bitmap.data[idx + 2]) * 22);
+          this.bitmap.data[idx] = dR;
+          this.bitmap.data[idx + 1] = dG;
+          this.bitmap.data[idx + 2] = dB;
+        });
+
+        elaHeatmapBase64 = await preview.getBase64('image/jpeg');
+      } catch (heatErr) {
+        console.warn('ELA heatmap preview generation warning:', heatErr.message);
+      }
     } catch (elaErr) {
       console.warn('ELA analysis warning:', elaErr.message);
     }
@@ -303,6 +329,7 @@ export const analyzeImageForensics = async (imagePath) => {
       isUnderexposed,
       elaScore,
       elaTamperingDetected,
+      elaHeatmapBase64,
     };
   } catch (err) {
     console.error('Forensics error:', err.message);
@@ -722,6 +749,7 @@ export const evaluateNidCard = async (frontImagePath, backImagePath = null, self
       elaScore: forensics.elaScore,
       isTampered: forensics.elaTamperingDetected,
       contrast: forensics.contrastScore,
+      elaHeatmapBase64: forensics.elaHeatmapBase64,
     },
     checks,
     fraudIndicators,

@@ -17,12 +17,19 @@ import {
   CreditCard,
   Droplet,
   Download,
+  ScanFace,
+  QrCode,
+  Eye,
+  Activity,
+  Sparkles,
 } from 'lucide-react';
 import Button from './Button';
+import Modal from './Modal';
 import { exportVerificationPdf } from '../utils/pdfExport';
 
 export default function VerificationReport({ verification, analysis, onReanalyze, reanalyzing }) {
   const [copied, setCopied] = useState(false);
+  const [showElaModal, setShowElaModal] = useState(false);
 
   const activeAnalysis = analysis || verification?.aiResult || verification?.analysis;
 
@@ -99,13 +106,13 @@ export default function VerificationReport({ verification, analysis, onReanalyze
     };
   } else if (verdict === 'INVALID_DOCUMENT') {
     theme = {
-      bg: 'bg-slate-100',
+      bg: 'bg-slate-50',
       border: 'border-slate-300',
       text: 'text-slate-900',
       badge: 'bg-slate-700 text-white',
-      icon: XCircle,
+      icon: AlertCircle,
       title: 'INVALID DOCUMENT / UNREADABLE',
-      subtitle: 'Could not extract valid National ID Card credentials.',
+      subtitle: 'Could not extract valid Bangladesh NID number or required security fields.',
     };
   }
 
@@ -113,9 +120,9 @@ export default function VerificationReport({ verification, analysis, onReanalyze
 
   return (
     <div className="space-y-5">
-      {/* 1. Header Banner */}
-      <div className={`rounded-xl border p-5 ${theme.bg} ${theme.border}`}>
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      {/* 1. Verdict Banner */}
+      <div className={`rounded-xl border ${theme.border} ${theme.bg} p-5 shadow-xs transition-all`}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3.5">
             <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${theme.badge}`}>
               <VerdictIcon size={24} />
@@ -272,7 +279,7 @@ export default function VerificationReport({ verification, analysis, onReanalyze
             ) : (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800">
                 <AlertCircle size={12} />
-                Not in 115k Database
+                Not in 113k Database
               </span>
             )}
           </div>
@@ -291,7 +298,89 @@ export default function VerificationReport({ verification, analysis, onReanalyze
         </div>
       </div>
 
-      {/* 4. Security Checks Breakdown */}
+      {/* 4. Forensic ELA & Biometric Cards Grid */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {/* Error Level Analysis (ELA) Card */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-2 text-xs font-bold text-slate-800">
+              <Activity size={15} className="text-purple-600" />
+              Forensic Tampering (ELA)
+            </span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                forensics.isTampered
+                  ? 'bg-rose-100 text-rose-800'
+                  : 'bg-emerald-100 text-emerald-800'
+              }`}
+            >
+              {forensics.isTampered ? 'Tampering Detected' : 'Authentic Compression'}
+            </span>
+          </div>
+
+          <div className="mt-3 flex items-center justify-between">
+            <div className="text-xs text-slate-600">
+              <div>Tampering Risk Score: <span className="font-bold text-slate-900">{forensics.elaScore ?? 0}/100</span></div>
+              <div className="text-[10px] text-slate-400">Differential JPEG artifact variance analysis</div>
+            </div>
+            {forensics.elaHeatmapBase64 && (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={Eye}
+                onClick={() => setShowElaModal(true)}
+              >
+                Inspect Heatmap
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Facial eKYC Match Card */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-2 text-xs font-bold text-slate-800">
+              <ScanFace size={15} className="text-indigo-600" />
+              Facial eKYC Biometric Match
+            </span>
+            {extractedData.faceMatch ? (
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                  extractedData.faceMatch.isMatch
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-rose-100 text-rose-800'
+                }`}
+              >
+                {extractedData.faceMatch.isMatch ? 'Identity Verified' : 'Face Mismatch'}
+              </span>
+            ) : (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
+                Selfie Not Provided
+              </span>
+            )}
+          </div>
+
+          <div className="mt-3 text-xs text-slate-600">
+            {extractedData.faceMatch ? (
+              <div className="flex items-center justify-between">
+                <div>
+                  <div>Biometric Similarity: <span className="font-bold text-slate-900">{extractedData.faceMatch.similarityScore}%</span></div>
+                  <div className="text-[10px] text-slate-400">Card portrait vs live selfie correlation</div>
+                </div>
+                <div className="text-right text-[11px] font-semibold text-indigo-700">
+                  {extractedData.faceMatch.isMatch ? '✓ Confirmed Citizen' : '⚠ Non-matching Face'}
+                </div>
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-400">
+                Upload a live selfie on the verification submission page to activate automated portrait-to-selfie facial cross-checking.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 5. Security Checks Breakdown */}
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h4 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-900">
           <Cpu size={16} className="text-navy-600" />
@@ -329,6 +418,37 @@ export default function VerificationReport({ verification, analysis, onReanalyze
           })}
         </div>
       </div>
+
+      {/* ELA Heatmap Modal */}
+      {showElaModal && forensics.elaHeatmapBase64 && (
+        <Modal
+          open={showElaModal}
+          title="Digital Forensics: Error Level Analysis (ELA) Heatmap"
+          onClose={() => setShowElaModal(false)}
+          footer={
+            <Button variant="secondary" onClick={() => setShowElaModal(false)}>
+              Close Inspector
+            </Button>
+          }
+        >
+          <div className="space-y-4">
+            <p className="text-xs text-slate-600">
+              Error Level Analysis (ELA) highlights differences in compression levels across the image. Regions with bright, irregular noise patterns indicate potential digital splicing, cloned patches, or modified text.
+            </p>
+            <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950 p-2 text-center">
+              <img
+                src={forensics.elaHeatmapBase64}
+                alt="ELA Forensic Heatmap"
+                className="mx-auto max-h-96 rounded-lg object-contain"
+              />
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span>Risk Score: <strong className="text-slate-800">{forensics.elaScore}/100</strong></span>
+              <span>Status: <strong className={forensics.isTampered ? 'text-rose-600' : 'text-emerald-600'}>{forensics.isTampered ? 'Tampering Detected' : 'Clean / Uniform'}</strong></span>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

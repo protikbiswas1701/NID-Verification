@@ -33,13 +33,16 @@ const applyAnalysis = (verification, aiResult, label = 'Automated') => {
 
   // Store full result under aiResult for the frontend VerificationReport component
   verification.aiResult = {
+    ...a,
     verdict: a.verdict,
     confidenceScore: a.confidenceScore,
     isGenuine: a.isGenuine,
     extractedData: a.extractedData,
+    databaseMatch: a.databaseMatch,
+    forensics: a.forensics,
     checks: a.checks,
     fraudIndicators: a.fraudIndicators,
-    registryMatch: a.registryMatch,
+    registryMatch: a.registryMatch || a.databaseMatch,
     analyzedAt: a.analyzedAt,
   };
 
