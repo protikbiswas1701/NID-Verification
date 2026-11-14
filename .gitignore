@@ -1,0 +1,11 @@
+**/node_modules/
+**/.env
+**/.env.*
+!**/.env.example
+**/dist/
+**/private_uploads/*
+!**/private_uploads/.gitkeep
+*.traineddata
+.embedded_mongo_data
+.DS_Store
+Thumbs.db
