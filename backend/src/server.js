@@ -11,6 +11,21 @@ const start = async () => {
   } catch (err) {
     console.warn('Warning: Could not preload registry at startup:', err.message);
   }
+
+  // Ensure default admin user has admin privileges
+  try {
+    const User = (await import('./models/User.js')).default;
+    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@nidverify.local').trim().toLowerCase();
+    const adminUser = await User.findOne({ email: adminEmail });
+    if (adminUser && adminUser.role !== 'admin') {
+      adminUser.role = 'admin';
+      await adminUser.save();
+      console.log(`Promoted ${adminEmail} to admin privileges.`);
+    }
+  } catch (seedErr) {
+    console.warn('Admin privileges bootstrap warning:', seedErr.message);
+  }
+
   app.listen(env.port, () => console.log(`NID Verify API running on http://localhost:${env.port} (${env.nodeEnv})`));
 };
 
