@@ -1,11 +1,6 @@
-FROM node:20-bullseye-slim
+FROM node:20-alpine
 
 WORKDIR /app
-
-# Install standard dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 RUN npm ci --omit=dev
