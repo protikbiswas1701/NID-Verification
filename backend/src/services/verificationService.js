@@ -95,9 +95,11 @@ export const normalizeDob = (raw) => {
 export const preprocessImageForOcr = async (imagePath) => {
   try {
     const img = await Jimp.read(imagePath);
-    // Convert to grayscale, normalize contrast, and slightly sharpen
+    // If image is small or low-res (e.g. mobile screenshots < 1200px wide), upscale 2x for sharp OCR
+    if (img.bitmap.width < 1200) {
+      img.resize({ w: img.bitmap.width * 2, h: img.bitmap.height * 2 });
+    }
     img.greyscale();
-    img.contrast(0.25);
     img.normalize();
     const tempBuffer = await img.getBuffer('image/png');
     return tempBuffer;
@@ -129,22 +131,44 @@ export const extractCardData = async (imagePath) => {
     let nid = null;
     let nidType = 'UNKNOWN';
 
-    // Search for 17-digit numbers
-    const match17 = normalizedText.match(/\b(19\d{2}|20\d{2})\d{13}\b/);
-    // Search for 13-digit numbers
-    const match13 = normalizedText.match(/\b\d{13}\b/);
-    // Search for 10-digit numbers
-    const match10 = normalizedText.match(/(?:NID|NO|ID|Card|Number)?[:.\s]*\b(\d{10})\b/i) || normalizedText.match(/\b\d{10}\b/);
+    // First priority: Look for explicit labeled ID number: "ID NO: 3778939417" or "NID: ..."
+    const labeledMatch = normalizedText.match(/(?:ID\s*NO|NID\s*(?:NO|Number)?|Card\s*NO|Number)[:.\s]+([0-9\s]{10,22})/i);
+    if (labeledMatch) {
+      const cleanedDigits = labeledMatch[1].replace(/\D/g, '');
+      if (cleanedDigits.length === 10) {
+        nid = cleanedDigits;
+        nidType = 'SMART_10_DIGIT';
+      } else if (cleanedDigits.length === 17) {
+        nid = cleanedDigits;
+        nidType = 'OLD_17_DIGIT';
+      } else if (cleanedDigits.length === 13) {
+        nid = cleanedDigits;
+        nidType = 'OLD_13_DIGIT';
+      } else if (cleanedDigits.length === 11) {
+        // Strip single spurious digit inserted by OCR noise on 10-digit smart cards
+        nid = cleanedDigits.slice(0, 10);
+        nidType = 'SMART_10_DIGIT';
+      }
+    }
 
-    if (match17) {
-      nid = match17[0];
-      nidType = 'OLD_17_DIGIT';
-    } else if (match10) {
-      nid = match10[1] || match10[0];
-      nidType = 'SMART_10_DIGIT';
-    } else if (match13) {
-      nid = match13[0];
-      nidType = 'OLD_13_DIGIT';
+    if (!nid) {
+      // Search for 17-digit numbers
+      const match17 = normalizedText.match(/\b(19\d{2}|20\d{2})\d{13}\b/);
+      // Search for 13-digit numbers
+      const match13 = normalizedText.match(/\b\d{13}\b/);
+      // Search for 10-digit numbers
+      const match10 = normalizedText.match(/(?:NID|NO|ID|Card|Number)?[:.\s]*\b(\d{10})\b/i) || normalizedText.match(/\b\d{10}\b/);
+
+      if (match17) {
+        nid = match17[0];
+        nidType = 'OLD_17_DIGIT';
+      } else if (match10) {
+        nid = match10[1] || match10[0];
+        nidType = 'SMART_10_DIGIT';
+      } else if (match13) {
+        nid = match13[0];
+        nidType = 'OLD_13_DIGIT';
+      }
     }
 
     // 2. Extract Date of Birth
@@ -167,8 +191,8 @@ export const extractCardData = async (imagePath) => {
       nameBangla = bnNameMatch[1].trim().replace(/\n/g, ' ');
     }
 
-    // English Name match
-    const nameMatch = fullText.match(/(?:Name|NAME)[:.\s]+([A-Z\s.]{3,35})/);
+    // English Name match (bounded to line end so it doesn't grab trailing characters on next line)
+    const nameMatch = fullText.match(/(?:Name|NAME)[:.\s]+([A-Za-z\s.]{3,35})(?:\r?\n|$)/);
     if (nameMatch) {
       name = nameMatch[1].trim().replace(/\n/g, ' ');
     } else {
@@ -445,6 +469,17 @@ export const evaluateNidCard = async (frontImagePath, backImagePath = null, self
       barcodeResult = await scanCardBarcode(backImagePath);
       if (barcodeResult.detected) {
         console.log(`Barcode decoded on back: ${barcodeResult.format}`);
+        // If front OCR missed or had noise on NID, use barcode PIN as fallback
+        if (!extracted.nid && barcodeResult.barcodeNid) {
+          extracted.nid = barcodeResult.barcodeNid;
+          extracted.nidType = barcodeResult.barcodeNid.length === 17 ? 'OLD_17_DIGIT' : barcodeResult.barcodeNid.length === 10 ? 'SMART_10_DIGIT' : 'OLD_13_DIGIT';
+        }
+        if (!extracted.dob && barcodeResult.barcodeDob) {
+          extracted.dob = normalizeDob(barcodeResult.barcodeDob);
+        }
+        if (!extracted.name && barcodeResult.barcodeName) {
+          extracted.name = barcodeResult.barcodeName;
+        }
       }
     } catch (bcErr) {
       console.warn('Barcode decoding warning:', bcErr.message);
@@ -627,23 +662,49 @@ export const evaluateNidCard = async (frontImagePath, backImagePath = null, self
 
   // Rule G: 2D Barcode Cross-Match (Back side verification)
   if (barcodeResult.detected) {
-    if (barcodeResult.barcodeNid && extracted.nid) {
-      if (barcodeResult.barcodeNid === extracted.nid) {
-        checks.push({
-          title: 'Back 2D Barcode / PDF417 Cross-Check',
-          status: 'PASSED',
-          details: `Barcode payload verified: Encoded NID (${barcodeResult.barcodeNid}) matches front card credentials.`,
-        });
-        score += 20;
-      } else {
-        checks.push({
-          title: 'Back 2D Barcode / PDF417 Cross-Check',
-          status: 'FAILED',
-          details: `Critical Forgery Flag: Barcode encodes NID ${barcodeResult.barcodeNid}, but front card states ${extracted.nid}!`,
-        });
-        fraudIndicators.push(`Back barcode NID (${barcodeResult.barcodeNid}) contradicts front printed NID (${extracted.nid}).`);
-        score -= 50;
+    const bPin = barcodeResult.barcodePin || barcodeResult.barcodeNid;
+    const bDob = barcodeResult.barcodeDob ? normalizeDob(barcodeResult.barcodeDob) : null;
+    const bName = barcodeResult.barcodeName ? barcodeResult.barcodeName.trim().toUpperCase() : null;
+    const cName = extracted.name ? extracted.name.trim().toUpperCase() : null;
+    const cDob = extracted.dob ? normalizeDob(extracted.dob) : null;
+
+    let isMatch = false;
+    let matchReason = '';
+
+    // Case 1: Exact NID match (for 13 or 17 digit cards)
+    if (bPin && extracted.nid && (bPin === extracted.nid || bPin.endsWith(extracted.nid))) {
+      isMatch = true;
+      matchReason = `Barcode payload verified: Encoded NID (${bPin}) matches front card credentials.`;
+    }
+    // Case 2: Smart Card (Front has 10 digits, Back barcode has 17-digit PIN + Name + DOB)
+    else if (extracted.nidType === 'SMART_10_DIGIT' || (extracted.nid && extracted.nid.length === 10)) {
+      // In BD Smart Cards, PDF417 encodes 17-digit PIN + Name + DOB
+      const nameMatches = Boolean(bName && cName && (bName.includes(cName) || cName.includes(bName)));
+      const dobMatches = Boolean(bDob && cDob && bDob === cDob);
+      // Also check if PIN starts with birth year
+      const pinYearMatches = Boolean(bPin && cDob && bPin.startsWith(cDob.substring(0, 4)));
+
+      if ((nameMatches && dobMatches) || (dobMatches && pinYearMatches) || (nameMatches && pinYearMatches)) {
+        isMatch = true;
+        matchReason = `Smart Card PDF417 authenticated: Encoded citizen details (${barcodeResult.barcodeName || ''} · ${barcodeResult.barcodeDob || ''}) match front card.`;
       }
+    }
+
+    if (isMatch) {
+      checks.push({
+        title: 'Back 2D Barcode / PDF417 Cross-Check',
+        status: 'PASSED',
+        details: matchReason,
+      });
+      score += 20;
+    } else if (bPin && extracted.nid) {
+      checks.push({
+        title: 'Back 2D Barcode / PDF417 Cross-Check',
+        status: 'FAILED',
+        details: `Critical Forgery Flag: Barcode demographic data (${bPin}) contradicts front card credentials (${extracted.nid}).`,
+      });
+      fraudIndicators.push(`Back barcode data contradicts front card details.`);
+      score -= 50;
     } else {
       checks.push({
         title: 'Back 2D Barcode / PDF417 Cross-Check',

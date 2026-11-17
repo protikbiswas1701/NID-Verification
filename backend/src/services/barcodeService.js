@@ -48,15 +48,35 @@ export const scanCardBarcode = async (imagePath) => {
     const rawText = result.getText();
     const format = result.getBarcodeFormat();
 
-    // Extract NID number from barcode data if structured
-    // In BD NIDs, PDF417 often contains <pin>...</pin> or NID/DOB structures
+    // Extract NID number and demographic fields from barcode data
+    // In BD NIDs, PDF417 contains <pin>...</pin>, <name>...</name>, <DOB>...</DOB>
     let barcodeNid = null;
-    const pinMatch = rawText.match(/<pin>(\d+)<\/pin>/i)
-      || rawText.match(/(?:NID|PIN)[:\s]*(\d{10,17})/i)
-      || rawText.match(/\b\d{10}\b/)
-      || rawText.match(/\b\d{17}\b/);
-    if (pinMatch) {
-      barcodeNid = pinMatch[1] || pinMatch[0];
+    let barcodePin = null;
+    let barcodeName = null;
+    let barcodeDob = null;
+
+    const pinTagMatch = rawText.match(/<pin>(\d+)<\/pin>/i);
+    const nameTagMatch = rawText.match(/<name>([^<]+)<\/name>/i);
+    const dobTagMatch = rawText.match(/<DOB>([^<]+)<\/DOB>/i);
+
+    if (pinTagMatch) {
+      barcodePin = pinTagMatch[1].trim();
+      barcodeNid = barcodePin;
+    } else {
+      const pinMatch = rawText.match(/(?:NID|PIN)[:\s]*(\d{10,17})/i)
+        || rawText.match(/\b\d{17}\b/)
+        || rawText.match(/\b\d{10}\b/);
+      if (pinMatch) {
+        barcodeNid = pinMatch[1] || pinMatch[0];
+        barcodePin = barcodeNid;
+      }
+    }
+
+    if (nameTagMatch) {
+      barcodeName = nameTagMatch[1].trim();
+    }
+    if (dobTagMatch) {
+      barcodeDob = dobTagMatch[1].trim();
     }
 
     return {
@@ -64,6 +84,9 @@ export const scanCardBarcode = async (imagePath) => {
       format: format ? String(format) : 'PDF417',
       rawText,
       barcodeNid,
+      barcodePin,
+      barcodeName,
+      barcodeDob,
     };
   } catch (err) {
     // No barcode found or unreadable

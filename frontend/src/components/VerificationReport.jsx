@@ -343,15 +343,19 @@ export default function VerificationReport({ verification, analysis, onReanalyze
               <ScanFace size={15} className="text-indigo-600" />
               Facial eKYC Biometric Match
             </span>
-            {extractedData.faceMatch ? (
+            {extractedData.faceMatch && extractedData.faceMatch.success ? (
               <span
                 className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                  extractedData.faceMatch.isMatch
+                  extractedData.faceMatch.isMatch || extractedData.faceMatch.match
                     ? 'bg-emerald-100 text-emerald-800'
                     : 'bg-rose-100 text-rose-800'
                 }`}
               >
-                {extractedData.faceMatch.isMatch ? 'Identity Verified' : 'Face Mismatch'}
+                {extractedData.faceMatch.isMatch || extractedData.faceMatch.match ? 'Identity Verified' : 'Face Mismatch'}
+              </span>
+            ) : extractedData.faceMatch && !extractedData.faceMatch.success ? (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
+                Selfie Bypassed
               </span>
             ) : (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
@@ -361,14 +365,14 @@ export default function VerificationReport({ verification, analysis, onReanalyze
           </div>
 
           <div className="mt-3 text-xs text-slate-600">
-            {extractedData.faceMatch ? (
+            {extractedData.faceMatch && extractedData.faceMatch.success ? (
               <div className="flex items-center justify-between">
                 <div>
-                  <div>Biometric Similarity: <span className="font-bold text-slate-900">{extractedData.faceMatch.similarityScore}%</span></div>
+                  <div>Biometric Similarity: <span className="font-bold text-slate-900">{extractedData.faceMatch.similarityScore ?? extractedData.faceMatch.confidenceScore ?? 0}%</span></div>
                   <div className="text-[10px] text-slate-400">Card portrait vs live selfie correlation</div>
                 </div>
                 <div className="text-right text-[11px] font-semibold text-indigo-700">
-                  {extractedData.faceMatch.isMatch ? '✓ Confirmed Citizen' : '⚠ Non-matching Face'}
+                  {extractedData.faceMatch.isMatch || extractedData.faceMatch.match ? '✓ Confirmed Citizen' : '⚠ Non-matching Face'}
                 </div>
               </div>
             ) : (

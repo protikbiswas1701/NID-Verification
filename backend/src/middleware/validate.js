@@ -35,7 +35,7 @@ export const changePasswordRules = [
 export const idParam = [param('id').isMongoId().withMessage('Invalid id')];
 export const fileParams = [
   param('id').isMongoId().withMessage('Invalid id'),
-  param('side').isIn(['front', 'back']).withMessage('Side must be front or back'),
+  param('side').isIn(['front', 'back', 'selfie']).withMessage('Side must be front, back, or selfie'),
 ];
 
 export const listQueryRules = [

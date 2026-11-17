@@ -324,7 +324,7 @@ export default function Upload() {
             error={errors.front}
           />
           <NidImageInput
-            label="Back side (optional)"
+            label="Back side"
             file={back}
             onChange={setBack}
             disabled={submitting}
