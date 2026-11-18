@@ -110,10 +110,119 @@ export const preprocessImageForOcr = async (imagePath) => {
 };
 
 /**
- * Optical Character Recognition and Information Extraction
- * Uses dual 'eng+ben' language recognition with preprocessed image buffer
+ * Helper to parse structured citizen fields from raw OCR text
  */
-export const extractCardData = async (imagePath) => {
+export const parseOcrCardText = (fullText, confidence = 0) => {
+  const normalizedText = convertBengaliDigits(fullText);
+
+  // 1. Extract NID Number
+  let nid = null;
+  let nidType = 'UNKNOWN';
+
+  // First priority: Look for explicit labeled ID number: "ID NO: 3778939417" or "NID: ..."
+  const labeledMatch = normalizedText.match(/(?:ID\s*NO|NID\s*(?:NO|Number)?|Card\s*NO|Number)[:.\s]+([0-9\s]{10,22})/i);
+  if (labeledMatch) {
+    const cleanedDigits = labeledMatch[1].replace(/\D/g, '');
+    if (cleanedDigits.length === 10) {
+      nid = cleanedDigits;
+      nidType = 'SMART_10_DIGIT';
+    } else if (cleanedDigits.length === 17) {
+      nid = cleanedDigits;
+      nidType = 'OLD_17_DIGIT';
+    } else if (cleanedDigits.length === 13) {
+      nid = cleanedDigits;
+      nidType = 'OLD_13_DIGIT';
+    } else if (cleanedDigits.length === 11) {
+      // Strip single spurious digit inserted by OCR noise on 10-digit smart cards
+      nid = cleanedDigits.slice(0, 10);
+      nidType = 'SMART_10_DIGIT';
+    }
+  }
+
+  if (!nid) {
+    // Search for 17-digit numbers
+    const match17 = normalizedText.match(/\b(19\d{2}|20\d{2})\d{13}\b/);
+    // Search for 13-digit numbers
+    const match13 = normalizedText.match(/\b\d{13}\b/);
+    // Search for 10-digit numbers
+    const match10 = normalizedText.match(/(?:NID|NO|ID|Card|Number)?[:.\s]*\b(\d{10})\b/i) || normalizedText.match(/\b\d{10}\b/);
+
+    if (match17) {
+      nid = match17[0];
+      nidType = 'OLD_17_DIGIT';
+    } else if (match10) {
+      nid = match10[1] || match10[0];
+      nidType = 'SMART_10_DIGIT';
+    } else if (match13) {
+      nid = match13[0];
+      nidType = 'OLD_13_DIGIT';
+    }
+  }
+
+  // 2. Extract Date of Birth
+  let dob = null;
+  const dobMatch = normalizedText.match(/(?:DOB|Date of Birth|Birth|Date|জন্ম|তারিখ)[:.\s]*([0-9]{1,2}[- /.][A-Za-z0-9\u0980-\u09FF]{2,9}[- /.][0-9]{4})/i)
+    || normalizedText.match(/\b(\d{1,2}[- /.](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{1,2})[- /.]\d{4})\b/i)
+    || normalizedText.match(/\b(\d{4}[- /.]\d{1,2}[- /.]\d{1,2})\b/);
+
+  if (dobMatch) {
+    dob = normalizeDob(dobMatch[1]);
+  }
+
+  // 3. Extract Name (English or Bengali)
+  let name = null;
+  let nameBangla = null;
+
+  // Bengali name regex match: নাম: ...
+  const bnNameMatch = fullText.match(/(?:নাম|নামঃ)[:.\s]+([\u0980-\u09FF\s.]{3,40})/);
+  if (bnNameMatch) {
+    nameBangla = bnNameMatch[1].trim().replace(/\n/g, ' ');
+  }
+
+  // English Name match (handles clean line endings and lines with trailing noise)
+  const nameMatch = fullText.match(/(?:Name|NAME)[:.\s]+([A-Za-z\s.]{3,35})(?:\r?\n|$)/)
+    || fullText.match(/(?:Name|NAME)[:.\s]+([A-Z][A-Za-z\s.]{2,30})/);
+  if (nameMatch) {
+    const rawName = nameMatch[1].trim().replace(/\n/g, ' ');
+    const words = rawName.split(/\s+/).filter(w => /^[A-Z]{2,}$/.test(w));
+    name = words.length >= 2 ? words.join(' ') : rawName;
+  } else {
+    const lines = fullText.split('\n').map(l => l.trim());
+    const capsLine = lines.find(l => /^[A-Z\s.]{4,30}$/.test(l) && !l.includes('BANGLADESH') && !l.includes('NATIONAL') && !l.includes('CARD') && !l.includes('GOVERNMENT'));
+    if (capsLine) name = capsLine;
+  }
+
+  // 4. Extract Blood Group
+  let bloodGroup = null;
+  const bgMatch = fullText.match(/\b(A|B|AB|O)[+-]\b/i);
+  if (bgMatch) {
+    bloodGroup = bgMatch[0].toUpperCase();
+  }
+
+  // 5. Government Keywords
+  const hasGovHeader = /bangladesh|republic|national|government|গণপ্রজাতন্ত্রী|বাংলাদেশ/i.test(fullText);
+
+  return {
+    rawText: fullText,
+    extracted: {
+      nid,
+      nidType,
+      dob,
+      name: name || nameBangla || null,
+      nameBangla,
+      bloodGroup,
+      hasGovHeader,
+    },
+    ocrConfidence: Math.round(confidence || 0),
+  };
+};
+
+/**
+ * Optical Character Recognition and Information Extraction
+ * Uses dual 'eng+ben' language recognition with preprocessed image buffer.
+ * Automatically tries 90/270/180 degree rotations if card was photographed vertically.
+ */
+export const extractCardData = async (imagePath, allowRotate = true) => {
   let worker;
   try {
     const processedInput = await preprocessImageForOcr(imagePath);
@@ -124,106 +233,28 @@ export const extractCardData = async (imagePath) => {
       worker = await createWorker('eng');
     }
     const ret = await worker.recognize(processedInput);
-    const fullText = ret.data.text || '';
-    const normalizedText = convertBengaliDigits(fullText);
+    let parsed = parseOcrCardText(ret.data.text || '', ret.data.confidence);
 
-    // 1. Extract NID Number
-    let nid = null;
-    let nidType = 'UNKNOWN';
-
-    // First priority: Look for explicit labeled ID number: "ID NO: 3778939417" or "NID: ..."
-    const labeledMatch = normalizedText.match(/(?:ID\s*NO|NID\s*(?:NO|Number)?|Card\s*NO|Number)[:.\s]+([0-9\s]{10,22})/i);
-    if (labeledMatch) {
-      const cleanedDigits = labeledMatch[1].replace(/\D/g, '');
-      if (cleanedDigits.length === 10) {
-        nid = cleanedDigits;
-        nidType = 'SMART_10_DIGIT';
-      } else if (cleanedDigits.length === 17) {
-        nid = cleanedDigits;
-        nidType = 'OLD_17_DIGIT';
-      } else if (cleanedDigits.length === 13) {
-        nid = cleanedDigits;
-        nidType = 'OLD_13_DIGIT';
-      } else if (cleanedDigits.length === 11) {
-        // Strip single spurious digit inserted by OCR noise on 10-digit smart cards
-        nid = cleanedDigits.slice(0, 10);
-        nidType = 'SMART_10_DIGIT';
+    // If no valid NID was extracted and allowRotate is enabled, test orthogonal orientations
+    if (!parsed.extracted.nid && allowRotate) {
+      try {
+        const baseImg = await Jimp.read(imagePath);
+        for (const deg of [90, 270, 180]) {
+          const rotBuf = await baseImg.clone().rotate(deg).getBuffer('image/png');
+          const rotPre = await preprocessImageForOcr(rotBuf);
+          const rotRet = await worker.recognize(rotPre);
+          const rotParsed = parseOcrCardText(rotRet.data.text || '', rotRet.data.confidence);
+          if (rotParsed.extracted.nid) {
+            parsed = rotParsed;
+            break;
+          }
+        }
+      } catch (rotErr) {
+        console.warn('Auto-orientation OCR fallback warning:', rotErr.message);
       }
     }
 
-    if (!nid) {
-      // Search for 17-digit numbers
-      const match17 = normalizedText.match(/\b(19\d{2}|20\d{2})\d{13}\b/);
-      // Search for 13-digit numbers
-      const match13 = normalizedText.match(/\b\d{13}\b/);
-      // Search for 10-digit numbers
-      const match10 = normalizedText.match(/(?:NID|NO|ID|Card|Number)?[:.\s]*\b(\d{10})\b/i) || normalizedText.match(/\b\d{10}\b/);
-
-      if (match17) {
-        nid = match17[0];
-        nidType = 'OLD_17_DIGIT';
-      } else if (match10) {
-        nid = match10[1] || match10[0];
-        nidType = 'SMART_10_DIGIT';
-      } else if (match13) {
-        nid = match13[0];
-        nidType = 'OLD_13_DIGIT';
-      }
-    }
-
-    // 2. Extract Date of Birth
-    let dob = null;
-    const dobMatch = normalizedText.match(/(?:DOB|Date of Birth|Birth|Date|জন্ম|তারিখ)[:.\s]*([0-9]{1,2}[- /.][A-Za-z0-9\u0980-\u09FF]{2,9}[- /.][0-9]{4})/i)
-      || normalizedText.match(/\b(\d{1,2}[- /.](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{1,2})[- /.]\d{4})\b/i)
-      || normalizedText.match(/\b(\d{4}[- /.]\d{1,2}[- /.]\d{1,2})\b/);
-
-    if (dobMatch) {
-      dob = normalizeDob(dobMatch[1]);
-    }
-
-    // 3. Extract Name (English or Bengali)
-    let name = null;
-    let nameBangla = null;
-
-    // Bengali name regex match: নাম: ...
-    const bnNameMatch = fullText.match(/(?:নাম|নামঃ)[:.\s]+([\u0980-\u09FF\s.]{3,40})/);
-    if (bnNameMatch) {
-      nameBangla = bnNameMatch[1].trim().replace(/\n/g, ' ');
-    }
-
-    // English Name match (bounded to line end so it doesn't grab trailing characters on next line)
-    const nameMatch = fullText.match(/(?:Name|NAME)[:.\s]+([A-Za-z\s.]{3,35})(?:\r?\n|$)/);
-    if (nameMatch) {
-      name = nameMatch[1].trim().replace(/\n/g, ' ');
-    } else {
-      const lines = fullText.split('\n').map(l => l.trim());
-      const capsLine = lines.find(l => /^[A-Z\s.]{4,30}$/.test(l) && !l.includes('BANGLADESH') && !l.includes('NATIONAL') && !l.includes('CARD') && !l.includes('GOVERNMENT'));
-      if (capsLine) name = capsLine;
-    }
-
-    // 4. Extract Blood Group
-    let bloodGroup = null;
-    const bgMatch = fullText.match(/\b(A|B|AB|O)[+-]\b/i);
-    if (bgMatch) {
-      bloodGroup = bgMatch[0].toUpperCase();
-    }
-
-    // 5. Government Keywords
-    const hasGovHeader = /bangladesh|republic|national|government|গণপ্রজাতন্ত্রী|বাংলাদেশ/i.test(fullText);
-
-    return {
-      rawText: fullText,
-      extracted: {
-        nid,
-        nidType,
-        dob,
-        name: name || nameBangla || null,
-        nameBangla,
-        bloodGroup,
-        hasGovHeader,
-      },
-      ocrConfidence: Math.round(ret.data.confidence || 0),
-    };
+    return parsed;
   } finally {
     if (worker) {
       await worker.terminate();
@@ -424,6 +455,13 @@ export const verifyAgainstDatabase = (nid, dob) => {
     registryRecord: {
       nid: cleanNid,
       dob: record.dob,
+      name: record.name || null,
+      nameBn: record.nameBn || null,
+      father: record.father || null,
+      mother: record.mother || null,
+      bloodGroup: record.bloodGroup || null,
+      birthPlace: record.birthPlace || null,
+      address: record.address || null,
       phoneMasked: record.phone ? `${record.phone.slice(0, 3)}****${record.phone.slice(-3)}` : null,
     },
   };
