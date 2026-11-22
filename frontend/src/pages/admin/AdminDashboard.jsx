@@ -20,7 +20,7 @@ export default function AdminDashboard() {
       <PageHeader
         title="Overview"
         subtitle="Activity across all users."
-        action={
+        actions={
           <Link to="/admin/registry">
             <Button icon={Database} variant="secondary">
               Citizen Registry

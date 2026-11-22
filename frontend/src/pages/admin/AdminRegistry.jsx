@@ -105,7 +105,7 @@ export default function AdminRegistry() {
       <PageHeader
         title="Citizen Registry"
         subtitle="Manage national database records and pre-register test citizens for live demonstrations."
-        action={
+        actions={
           <Button icon={Plus} onClick={() => { setFormError(''); setShowAddModal(true); }}>
             Add Citizen to Registry
           </Button>
@@ -215,6 +215,7 @@ export default function AdminRegistry() {
       {/* Add Citizen Modal */}
       {showAddModal && (
         <Modal
+          open={showAddModal}
           title="Add Citizen to National Registry"
           onClose={() => !saving && setShowAddModal(false)}
         >
@@ -388,6 +389,7 @@ export default function AdminRegistry() {
       {/* Delete Confirmation Modal */}
       {toDelete && (
         <Modal
+          open={Boolean(toDelete)}
           title="Remove Citizen Record"
           onClose={() => !saving && setToDelete(null)}
         >
