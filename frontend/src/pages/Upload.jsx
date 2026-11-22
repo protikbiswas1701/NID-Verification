@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Send, ShieldAlert, Sparkles, CheckCircle2, AlertTriangle, FileArchive, Upload as UploadIcon } from 'lucide-react';
+import { Send, ShieldAlert, CheckCircle2, FileArchive, Upload as UploadIcon } from 'lucide-react';
 import Alert from '../components/Alert';
 import Button from '../components/Button';
 import NidImageInput from '../components/NidImageInput';
@@ -8,39 +8,6 @@ import PageHeader from '../components/PageHeader';
 import { useToast } from '../context/ToastContext';
 import { getErrorMessage } from '../services/api';
 import { verificationApi } from '../services';
-
-const SAMPLE_PRESETS = [
-  {
-    name: 'Genuine Smart Card',
-    file: '/samples/1_genuine_smart_card.jpg',
-    badge: 'Real NID + DOB Match',
-    tone: 'emerald',
-  },
-  {
-    name: 'Genuine 17-Digit',
-    file: '/samples/2_genuine_17digit_card.jpg',
-    badge: 'Valid Year Checksum',
-    tone: 'emerald',
-  },
-  {
-    name: 'Fake (Tampered DOB)',
-    file: '/samples/3_fake_tampered_dob.jpg',
-    badge: 'Database DOB Mismatch',
-    tone: 'rose',
-  },
-  {
-    name: 'Fake (Prefix Error)',
-    file: '/samples/4_fake_year_prefix_mismatch.jpg',
-    badge: 'Invalid 17-digit Checksum',
-    tone: 'rose',
-  },
-  {
-    name: 'Fake (Unregistered)',
-    file: '/samples/5_fake_unregistered_card.jpg',
-    badge: 'Not In Registry',
-    tone: 'amber',
-  },
-];
 
 export default function Upload() {
   const navigate = useNavigate();
@@ -53,7 +20,6 @@ export default function Upload() {
   const [serverError, setServerError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [loadingPreset, setLoadingPreset] = useState(false);
   const [activeTab, setActiveTab] = useState('single'); // 'single' | 'batch'
   const [zipFile, setZipFile] = useState(null);
   const [batchSummary, setBatchSummary] = useState(null);
@@ -83,23 +49,6 @@ export default function Upload() {
       setServerError(getErrorMessage(err));
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const loadPreset = async (preset) => {
-    setLoadingPreset(true);
-    try {
-      const res = await fetch(preset.file);
-      const blob = await res.blob();
-      const filename = preset.file.split('/').pop();
-      const file = new File([blob], filename, { type: 'image/jpeg' });
-      setFront(file);
-      setConsent(true);
-      toast.success(`Loaded sample: ${preset.name}`);
-    } catch (err) {
-      toast.error('Could not load sample card image.');
-    } finally {
-      setLoadingPreset(false);
     }
   };
 
@@ -267,51 +216,7 @@ export default function Upload() {
         </form>
       ) : (
         <>
-          {/* Quick Test Sample Picker */}
-          <div className="mb-6 rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50/70 via-sky-50/50 to-white p-4 shadow-sm">
-        <div className="mb-2.5 flex items-center gap-2">
-          <Sparkles size={16} className="text-indigo-600" />
-          <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-950">
-            Quick Test: Try Pre-configured Sample NID Cards
-          </h3>
-        </div>
-        <p className="mb-3 text-xs text-slate-600">
-          Click any sample card below to test genuine verification or fraud detection rules immediately:
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {SAMPLE_PRESETS.map((preset, idx) => {
-            const isEmerald = preset.tone === 'emerald';
-            const isRose = preset.tone === 'rose';
-            return (
-              <button
-                key={idx}
-                type="button"
-                disabled={submitting || loadingPreset}
-                onClick={() => loadPreset(preset)}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs font-semibold shadow-xs transition hover:shadow-sm ${
-                  isEmerald
-                    ? 'border-emerald-200 bg-emerald-50/70 text-emerald-900 hover:bg-emerald-100/80'
-                    : isRose
-                    ? 'border-rose-200 bg-rose-50/70 text-rose-900 hover:bg-rose-100/80'
-                    : 'border-amber-200 bg-amber-50/70 text-amber-900 hover:bg-amber-100/80'
-                }`}
-              >
-                {isEmerald ? (
-                  <CheckCircle2 size={14} className="text-emerald-600" />
-                ) : (
-                  <AlertTriangle size={14} className={isRose ? 'text-rose-600' : 'text-amber-600'} />
-                )}
-                <div>
-                  <div className="font-bold">{preset.name}</div>
-                  <div className="text-[10px] opacity-75">{preset.badge}</div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <form onSubmit={submit} noValidate className="space-y-6">
+          <form onSubmit={submit} noValidate className="space-y-6">
         {serverError && <Alert tone="error">{serverError}</Alert>}
 
         <div className="grid gap-6 md:grid-cols-3">
