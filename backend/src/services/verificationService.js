@@ -635,7 +635,7 @@ export const evaluateNidCard = async (frontImagePath, backImagePath = null, self
     checks.push({
       title: 'National Citizen Registry Record',
       status: 'WARNING',
-      details: 'NID number is not in the provided 115k database batch (Unregistered record).',
+      details: 'NID number is not in the national citizen registry. Record is unverified and cannot be authenticated as genuine.',
     });
     score -= 15;
   }
@@ -787,6 +787,45 @@ export const evaluateNidCard = async (frontImagePath, backImagePath = null, self
     }
   }
 
+  // Rule I: Fabricated / Dummy NID Pattern Detection
+  if (extracted.nid) {
+    const isRepeatedDigits = /^(\d)\1{9,}$/.test(extracted.nid);
+    const isSequentialDigits = /^(0123456789|1234567890|9876543210)$/.test(extracted.nid);
+    if (isRepeatedDigits || isSequentialDigits) {
+      checks.push({
+        title: 'NID Sequence Authenticity',
+        status: 'FAILED',
+        details: 'Fabricated NID sequence detected: Number consists of sequential or repeated dummy digits.',
+      });
+      fraudIndicators.push('Fabricated NID sequence: Contains non-issuable sequential or repeated digits.');
+      score -= 50;
+    }
+  }
+
+  // Rule J: Citizen Age & DOB Sanity Check
+  if (extracted.dob) {
+    const birthYear = parseInt(extracted.dob.slice(0, 4), 10);
+    const currentYear = new Date().getFullYear();
+    const age = currentYear - birthYear;
+    if (birthYear > currentYear) {
+      checks.push({
+        title: 'Citizen Age & DOB Validity',
+        status: 'FAILED',
+        details: `Impossible Date of Birth: Card states birth date in the future (${extracted.dob}).`,
+      });
+      fraudIndicators.push(`Impossible Date of Birth: Card states birth date in the future (${extracted.dob}).`);
+      score -= 50;
+    } else if (age < 15 || age > 125) {
+      checks.push({
+        title: 'Citizen Age & DOB Validity',
+        status: 'FAILED',
+        details: `Invalid citizen age: Birth year ${birthYear} indicates age ${age} (outside eligible range 15-125).`,
+      });
+      fraudIndicators.push(`Invalid citizen age: Birth year ${birthYear} indicates age ${age}.`);
+      score -= 30;
+    }
+  }
+
   // Auto-Crop rule confirmation
   if (cropResult.cardDetected) {
     checks.push({
@@ -796,28 +835,46 @@ export const evaluateNidCard = async (frontImagePath, backImagePath = null, self
     });
   }
 
-  // Clamp confidence score between 5 and 99
-  const finalConfidence = Math.max(5, Math.min(99, score));
-
-  // Determine Final Verdict
+  // Determine Final Verdict & Confidence Score
   let verdict = 'VERIFIED_GENUINE';
   let isGenuine = true;
+  let finalConfidence = 50;
 
   if (fraudIndicators.length > 0) {
     verdict = 'SUSPECTED_FAKE';
     isGenuine = false;
+    // For suspected fakes, authenticity confidence is strictly low (5% - 25%)
+    const fraudPenalty = fraudIndicators.length * 5;
+    finalConfidence = Math.max(5, Math.min(25, 30 - fraudPenalty));
   } else if (!extracted.nid) {
     verdict = 'INVALID_DOCUMENT';
     isGenuine = false;
+    finalConfidence = 10;
   } else if (!dbResult.found) {
     verdict = 'UNVERIFIED_UNREGISTERED';
     isGenuine = false;
-  } else if (finalConfidence < 70) {
+    // For unregistered documents:
+    // Without official citizen registry authentication, authenticity CANNOT be established.
+    // Confidence reflects only basic document structure legibility and is capped at 35%.
+    let unverifiedScore = 20; // baseline for legible document structure
+    if (extracted.nid && (extracted.nid.length === 10 || extracted.nid.length === 17 || extracted.nid.length === 13)) {
+      unverifiedScore += 5; // valid NID digit length
+    }
+    if (extracted.hasGovHeader) {
+      unverifiedScore += 5; // government branding detected
+    }
+    if (!forensics.elaTamperingDetected && !forensics.isBlurry) {
+      unverifiedScore += 5; // visual clarity & uniform compression
+    }
+    finalConfidence = Math.min(35, Math.max(15, unverifiedScore));
+  } else if (score < 70) {
     verdict = 'SUSPECTED_FAKE';
     isGenuine = false;
+    finalConfidence = Math.max(15, Math.min(35, score));
   } else {
     verdict = 'VERIFIED_GENUINE';
     isGenuine = true;
+    finalConfidence = Math.max(85, Math.min(99, score));
   }
 
   return {

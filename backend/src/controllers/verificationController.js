@@ -52,7 +52,9 @@ const applyAnalysis = (verification, aiResult, label = 'Automated') => {
   verification.status = verdictToStatus(a.verdict);
   const summary = a.isGenuine
     ? `${label} verification: Genuine (${a.confidenceScore}% confidence)`
-    : `${label} verification: ${a.verdict} — ${(a.fraudIndicators || []).slice(0, 2).join('; ') || 'Anomalies detected'}`;
+    : a.verdict === 'UNVERIFIED_UNREGISTERED'
+      ? `${label} verification: UNVERIFIED_UNREGISTERED — Unregistered record (${a.confidenceScore}% confidence)`
+      : `${label} verification: ${a.verdict} — ${(a.fraudIndicators || []).slice(0, 2).join('; ') || 'Anomalies detected'}`;
 
   verification.history.push({ status: verification.status, note: summary });
 };
