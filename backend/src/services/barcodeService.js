@@ -9,29 +9,37 @@ import {
 import { Jimp } from 'jimp';
 
 /**
+ * Convert a Jimp image to luminance bytes and attempt barcode decode.
+ * Returns the ZXing Result on success, or throws on failure.
+ */
+const tryDecode = (img, reader) => {
+  const width = img.bitmap.width;
+  const height = img.bitmap.height;
+  const len = width * height;
+
+  const luminancesUint8Array = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    const idx = i * 4;
+    const r = img.bitmap.data[idx];
+    const g = img.bitmap.data[idx + 1];
+    const b = img.bitmap.data[idx + 2];
+    luminancesUint8Array[i] = (r * 306 + g * 601 + b * 117) >> 10;
+  }
+
+  const luminanceSource = new RGBLuminanceSource(luminancesUint8Array, width, height);
+  const binaryBitmap = new BinaryBitmap(new HybridBinarizer(luminanceSource));
+  return reader.decode(binaryBitmap);
+};
+
+/**
  * Scans an image (specifically NID card back) for 2D PDF417 or QR barcodes.
+ * Tries multiple rotations (0°, 90°, 180°, 270°) to handle rotated/angled photos.
  * Returns decoded raw text, extracted NID/demographic parameters if found,
  * and whether a barcode was detected.
  */
 export const scanCardBarcode = async (imagePath) => {
   try {
     const img = await Jimp.read(imagePath);
-    const width = img.bitmap.width;
-    const height = img.bitmap.height;
-    const len = width * height;
-
-    const luminancesUint8Array = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      const idx = i * 4;
-      const r = img.bitmap.data[idx];
-      const g = img.bitmap.data[idx + 1];
-      const b = img.bitmap.data[idx + 2];
-      // Standard luminance
-      luminancesUint8Array[i] = (r * 306 + g * 601 + b * 117) >> 10;
-    }
-
-    const luminanceSource = new RGBLuminanceSource(luminancesUint8Array, width, height);
-    const binaryBitmap = new BinaryBitmap(new HybridBinarizer(luminanceSource));
 
     const hints = new Map();
     hints.set(DecodeHintType.POSSIBLE_FORMATS, [
@@ -44,7 +52,35 @@ export const scanCardBarcode = async (imagePath) => {
     const reader = new MultiFormatReader();
     reader.setHints(hints);
 
-    const result = reader.decode(binaryBitmap);
+    // Try original orientation first, then 90°, 180°, 270° rotations
+    const rotations = [0, 90, 180, 270];
+    let result = null;
+
+    for (const angle of rotations) {
+      try {
+        const rotated = angle === 0 ? img.clone() : img.clone().rotate(angle);
+        result = tryDecode(rotated, reader);
+        if (result) {
+          console.log(`Barcode decoded at ${angle}° rotation.`);
+          break;
+        }
+      } catch (_rotErr) {
+        // Try next rotation
+        continue;
+      }
+    }
+
+    if (!result) {
+      // All rotations failed
+      return {
+        detected: false,
+        format: null,
+        rawText: null,
+        barcodeNid: null,
+        error: 'No barcode found at any rotation (0°, 90°, 180°, 270°)',
+      };
+    }
+
     const rawText = result.getText();
     const format = result.getBarcodeFormat();
 

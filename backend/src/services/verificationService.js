@@ -194,9 +194,17 @@ export const parseOcrCardText = (fullText, confidence = 0) => {
 
   // 4. Extract Blood Group
   let bloodGroup = null;
-  const bgMatch = fullText.match(/\b(A|B|AB|O)[+-]\b/i);
-  if (bgMatch) {
-    bloodGroup = bgMatch[0].toUpperCase();
+  // Try labeled patterns first: "Blood Group: O+", "রক্তের গ্রুপ / Blood Group: B-", etc.
+  const bgLabeledMatch = fullText.match(/(?:Blood\s*Group|রক্তের\s*গ্রুপ)[^A-Za-z0-9]*\s*((?:AB|A|B|O)\s*[+-])/i);
+  if (bgLabeledMatch) {
+    bloodGroup = bgLabeledMatch[1].replace(/\s/g, '').toUpperCase();
+  }
+  // Fallback: standalone blood group pattern anywhere in text
+  if (!bloodGroup) {
+    const bgMatch = fullText.match(/(?:^|[\s:.,/])((?:AB|A|B|O)[+-])(?:$|[\s:.,/\n])/im);
+    if (bgMatch) {
+      bloodGroup = bgMatch[1].toUpperCase();
+    }
   }
 
   // 5. Government Keywords
@@ -886,7 +894,7 @@ export const evaluateNidCard = async (frontImagePath, backImagePath = null, self
       nidType: extracted.nidType,
       name: extracted.name || 'Not detected',
       dob: extracted.dob || 'Not detected',
-      bloodGroup: extracted.bloodGroup || 'Not specified',
+      bloodGroup: extracted.bloodGroup || dbResult.registryRecord?.bloodGroup || 'Not specified',
       hasBackImage: Boolean(backImagePath),
       barcode: barcodeResult.detected
         ? { detected: true, format: barcodeResult.format, barcodeNid: barcodeResult.barcodeNid }
