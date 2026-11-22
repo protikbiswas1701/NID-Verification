@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { FileSearch, History, LayoutDashboard, LogOut, Menu, Settings, Upload, Users, X } from 'lucide-react';
+import { Database, FileSearch, History, LayoutDashboard, LogOut, Menu, Settings, Upload, Users, X } from 'lucide-react';
 import Logo from '../components/Logo';
 import { useAuth } from '../context/AuthContext';
 
@@ -14,6 +14,7 @@ const NAV = {
   admin: [
     { to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true },
     { to: '/admin/verifications', label: 'Verification requests', icon: FileSearch },
+    { to: '/admin/registry', label: 'Citizen registry', icon: Database },
     { to: '/admin/users', label: 'Users', icon: Users },
     { to: '/admin/settings', label: 'Settings', icon: Settings },
   ],

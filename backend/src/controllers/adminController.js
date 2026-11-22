@@ -1,9 +1,11 @@
 import User from '../models/User.js';
 import Verification, { VERIFICATION_STATUSES } from '../models/Verification.js';
+import CitizenRecord from '../models/CitizenRecord.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { HttpError } from '../utils/httpError.js';
 import { sendPrivateFile } from '../utils/files.js';
 import { buildPaginationMeta, escapeRegex, getPagination } from '../utils/query.js';
+import { getRegistry, normalizeDob } from '../services/verificationService.js';
 
 // GET /api/admin/dashboard
 export const dashboard = asyncHandler(async (_req, res) => {
@@ -186,4 +188,111 @@ export const exportVerificationsCsv = asyncHandler(async (_req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="nid_verifications_${Date.now()}.csv"`);
   res.send(csvContent);
+});
+
+// POST /api/admin/registry - Add or update citizen in national registry
+export const createCitizenRecord = asyncHandler(async (req, res) => {
+  const { nid, name, dob, bloodGroup, nameBn, father, mother, birthPlace, phone, address, barcodePin } = req.body;
+
+  if (!nid || !name || !dob) {
+    throw new HttpError(400, 'NID number, Citizen Name, and Date of Birth (DOB) are required.');
+  }
+
+  const cleanNid = String(nid).replace(/\D/g, '');
+  if (![10, 13, 17].includes(cleanNid.length)) {
+    throw new HttpError(400, 'NID must be exactly 10, 13, or 17 numeric digits.');
+  }
+
+  const normalizedBirthDate = normalizeDob(dob);
+  if (!normalizedBirthDate) {
+    throw new HttpError(400, 'Invalid Date of Birth format. Please use YYYY-MM-DD or DD Mon YYYY.');
+  }
+
+  const cleanBarcodePin = barcodePin ? String(barcodePin).replace(/\D/g, '') : null;
+  const normalizedBg = bloodGroup ? bloodGroup.trim().toUpperCase().replace(/^0/, 'O') : null;
+
+  const docData = {
+    nid: cleanNid,
+    name: name.trim().toUpperCase(),
+    nameBn: nameBn?.trim() || null,
+    dob: normalizedBirthDate,
+    bloodGroup: normalizedBg,
+    father: father?.trim() || null,
+    mother: mother?.trim() || null,
+    birthPlace: birthPlace?.trim() || null,
+    phone: phone?.trim() || null,
+    address: address?.trim() || null,
+    barcodePin: cleanBarcodePin,
+    addedBy: req.user._id,
+  };
+
+  const citizen = await CitizenRecord.findOneAndUpdate(
+    { nid: cleanNid },
+    docData,
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  // Sync into memory registry cache immediately
+  try {
+    const memoryReg = getRegistry();
+    memoryReg[cleanNid] = {
+      dob: citizen.dob,
+      name: citizen.name,
+      nameBn: citizen.nameBn,
+      father: citizen.father,
+      mother: citizen.mother,
+      bloodGroup: citizen.bloodGroup,
+      birthPlace: citizen.birthPlace,
+      phone: citizen.phone,
+      address: citizen.address,
+    };
+    if (cleanBarcodePin) {
+      memoryReg[cleanBarcodePin] = { ...memoryReg[cleanNid] };
+    }
+  } catch (memErr) {
+    console.warn('Memory registry sync warning:', memErr.message);
+  }
+
+  res.status(201).json({ success: true, citizen });
+});
+
+// GET /api/admin/registry - List custom registered citizens
+export const listCitizenRecords = asyncHandler(async (req, res) => {
+  const paging = getPagination(req.query);
+  const filter = {};
+
+  if (req.query.search?.trim()) {
+    const rx = new RegExp(escapeRegex(req.query.search.trim()), 'i');
+    filter.$or = [{ nid: rx }, { name: rx }, { barcodePin: rx }];
+  }
+
+  const [items, total] = await Promise.all([
+    CitizenRecord.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(paging.skip)
+      .limit(paging.limit)
+      .populate('addedBy', 'name email')
+      .lean(),
+    CitizenRecord.countDocuments(filter),
+  ]);
+
+  res.json({ items, pagination: buildPaginationMeta(paging, total) });
+});
+
+// DELETE /api/admin/registry/:id - Remove custom citizen record
+export const deleteCitizenRecord = asyncHandler(async (req, res) => {
+  const citizen = await CitizenRecord.findById(req.params.id);
+  if (!citizen) throw new HttpError(404, 'Citizen record not found');
+
+  const { nid, barcodePin } = citizen;
+  await citizen.deleteOne();
+
+  // Remove from memory cache if present
+  try {
+    const memoryReg = getRegistry();
+    delete memoryReg[nid];
+    if (barcodePin) delete memoryReg[barcodePin];
+  } catch (_e) {}
+
+  res.json({ success: true, message: `Citizen ${nid} removed from custom registry.` });
 });

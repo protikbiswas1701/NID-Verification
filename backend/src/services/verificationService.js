@@ -4,6 +4,7 @@ import { createWorker } from 'tesseract.js';
 import { Jimp } from 'jimp';
 import { scanCardBarcode } from './barcodeService.js';
 import { runAutoCardCrop, runFaceComparison } from './visionBridge.js';
+import CitizenRecord from '../models/CitizenRecord.js';
 
 // Path to pre-indexed 113k national registry map
 const registryPath = path.resolve('src/data/nidRegistry.json');
@@ -412,10 +413,9 @@ export const analyzeImageForensics = async (imagePath) => {
 };
 
 /**
- * Cross-verify extracted card data against the official 115k database
+ * Cross-verify extracted card data against the official 115k database and custom citizen records
  */
-export const verifyAgainstDatabase = (nid, dob) => {
-  const registry = getRegistry();
+export const verifyAgainstDatabase = async (nid, dob) => {
   if (!nid) {
     return {
       found: false,
@@ -426,23 +426,57 @@ export const verifyAgainstDatabase = (nid, dob) => {
   }
 
   const cleanNid = String(nid).trim();
-  let record = registry[cleanNid];
+  let record = null;
 
-  // If not found directly, check 17-digit <-> 13-digit equivalence (BD year prefix)
-  if (!record && cleanNid.length === 17) {
-    record = registry[cleanNid.slice(4)];
+  // 1. Check MongoDB CitizenRecord collection (live custom registrations)
+  try {
+    const custom = await CitizenRecord.findOne({
+      $or: [
+        { nid: cleanNid },
+        { barcodePin: cleanNid },
+        ...(cleanNid.length === 17 ? [{ nid: cleanNid.slice(4) }] : []),
+      ],
+    }).lean();
+
+    if (custom) {
+      record = {
+        nid: custom.nid,
+        dob: custom.dob,
+        name: custom.name,
+        nameBn: custom.nameBn,
+        father: custom.father,
+        mother: custom.mother,
+        bloodGroup: custom.bloodGroup,
+        birthPlace: custom.birthPlace,
+        address: custom.address,
+        phone: custom.phone,
+      };
+    }
+  } catch (dbErr) {
+    console.warn('CitizenRecord MongoDB query warning:', dbErr.message);
   }
-  if (!record && cleanNid.length === 13 && dob) {
-    const normYear = normalizeDob(dob)?.substring(0, 4);
-    if (normYear && /^\d{4}$/.test(normYear)) {
-      record = registry[normYear + cleanNid];
+
+  // 2. Fall back to pre-indexed 113k national JSON registry
+  if (!record) {
+    const registry = getRegistry();
+    record = registry[cleanNid];
+
+    // If not found directly, check 17-digit <-> 13-digit equivalence (BD year prefix)
+    if (!record && cleanNid.length === 17) {
+      record = registry[cleanNid.slice(4)];
+    }
+    if (!record && cleanNid.length === 13 && dob) {
+      const normYear = normalizeDob(dob)?.substring(0, 4);
+      if (normYear && /^\d{4}$/.test(normYear)) {
+        record = registry[normYear + cleanNid];
+      }
     }
   }
 
   if (!record) {
     return {
       found: false,
-      reason: 'NID number is not present in the 115k citizen database.',
+      reason: 'NID number is not present in the citizen database.',
       matchedDob: false,
       registryRecord: null,
     };
@@ -547,7 +581,7 @@ export const evaluateNidCard = async (frontImagePath, backImagePath = null, self
   const forensics = await analyzeImageForensics(frontImagePath);
 
   // 3. Database Registry Cross-Verification
-  const dbResult = verifyAgainstDatabase(extracted.nid, extracted.dob);
+  const dbResult = await verifyAgainstDatabase(extracted.nid, extracted.dob);
 
   // 4. Checklist & Security Rules Evaluation
   const checks = [];

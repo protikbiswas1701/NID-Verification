@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { CheckCircle2, Clock, FileText, Inbox, UserSearch, Users } from 'lucide-react';
+import { CheckCircle2, Clock, Database, FileText, Inbox, UserSearch, Users } from 'lucide-react';
 import Alert from '../../components/Alert';
+import Button from '../../components/Button';
 import EmptyState from '../../components/EmptyState';
 import PageHeader from '../../components/PageHeader';
 import { PanelLoader } from '../../components/Spinner';
@@ -16,7 +17,17 @@ export default function AdminDashboard() {
 
   return (
     <>
-      <PageHeader title="Overview" subtitle="Activity across all users." />
+      <PageHeader
+        title="Overview"
+        subtitle="Activity across all users."
+        action={
+          <Link to="/admin/registry">
+            <Button icon={Database} variant="secondary">
+              Citizen Registry
+            </Button>
+          </Link>
+        }
+      />
       {error && <Alert tone="error" className="mb-4">{error}</Alert>}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

@@ -14,6 +14,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminVerifications from './pages/admin/AdminVerifications';
 import AdminVerificationDetails from './pages/admin/AdminVerificationDetails';
+import AdminRegistry from './pages/admin/AdminRegistry';
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
           <Route index element={<AdminDashboard />} />
           <Route path="verifications" element={<AdminVerifications />} />
           <Route path="verifications/:id" element={<AdminVerificationDetails />} />
+          <Route path="registry" element={<AdminRegistry />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />

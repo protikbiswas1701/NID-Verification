@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   dashboard, getUser, getVerification, getVerificationFile, listUsers, listVerifications, updateUserStatus, updateVerificationStatus, exportVerificationsCsv,
+  createCitizenRecord, listCitizenRecords, deleteCitizenRecord,
 } from '../controllers/adminController.js';
 import { reanalyzeVerification } from '../controllers/verificationController.js';
 import { protect } from '../middleware/authMiddleware.js';
@@ -23,4 +24,10 @@ router.get('/verifications/:id', idParam, handleValidation, getVerification);
 router.post('/verifications/:id/analyze', idParam, handleValidation, reanalyzeVerification);
 router.get('/verifications/:id/files/:side', fileParams, handleValidation, getVerificationFile);
 router.patch('/verifications/:id/status', updateVerificationStatusRules, handleValidation, updateVerificationStatus);
+
+// Citizen Registry Management (for live demos and registering new citizen NIDs)
+router.post('/registry', createCitizenRecord);
+router.get('/registry', listQueryRules, handleValidation, listCitizenRecords);
+router.delete('/registry/:id', idParam, handleValidation, deleteCitizenRecord);
+
 export default router;

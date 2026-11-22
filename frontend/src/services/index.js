@@ -30,4 +30,7 @@ export const adminApi = {
   updateVerificationStatus: (id, payload) => api.patch(`/admin/verifications/${id}/status`, payload),
   file: (id, side) => api.get(`/admin/verifications/${id}/files/${side}`, { responseType: 'blob' }),
   exportCsv: () => api.get('/admin/verifications/export-csv', { responseType: 'blob' }),
+  createCitizen: (payload) => api.post('/admin/registry', payload),
+  listCitizens: (params) => api.get('/admin/registry', { params }),
+  deleteCitizen: (id) => api.delete(`/admin/registry/${id}`),
 };
