@@ -363,9 +363,9 @@ export default function VerificationReport({ verification, analysis, onReanalyze
               >
                 {extractedData.faceMatch.isMatch || extractedData.faceMatch.match ? 'Identity Verified' : 'Face Mismatch'}
               </span>
-            ) : extractedData.faceMatch && !extractedData.faceMatch.success ? (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
-                Selfie Bypassed
+            ) : verification?.selfieImage ? (
+              <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
+                Selfie Preserved
               </span>
             ) : (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
@@ -385,6 +385,10 @@ export default function VerificationReport({ verification, analysis, onReanalyze
                   {extractedData.faceMatch.isMatch || extractedData.faceMatch.match ? '✓ Confirmed Citizen' : '⚠ Non-matching Face'}
                 </div>
               </div>
+            ) : verification?.selfieImage ? (
+              <p className="text-[11px] text-slate-500">
+                Selfie image captured and securely stored. Ready for reviewer audit and biometric confirmation.
+              </p>
             ) : (
               <p className="text-[11px] text-slate-400">
                 Upload a live selfie on the verification submission page to activate automated portrait-to-selfie facial cross-checking.

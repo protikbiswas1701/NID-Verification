@@ -116,9 +116,9 @@ export const exportVerificationPdf = (verification) => {
     ['Extracted NID Number:', extracted.nidNumber || 'Not detected'],
     ['Date of Birth (DOB):', extracted.dob || 'Not detected'],
     ['Citizen Name:', extracted.name || 'Not detected'],
-    ['Blood Group:', extracted.bloodGroup || 'Not specified'],
+    ['Blood Group:', (extracted.bloodGroup && extracted.bloodGroup !== 'Not specified' ? extracted.bloodGroup : dbMatch?.registryDetails?.bloodGroup) || 'Not specified'],
     ['Format / Structure:', extracted.nidType || 'N/A'],
-    ['Registry Status:', dbMatch.isRegistered ? 'Match found in 115k Citizen Registry' : 'Unregistered in Database'],
+    ['Registry Status:', dbMatch.isRegistered ? 'Match found in Citizen Registry' : 'Unregistered in Database'],
   ];
 
   doc.setFontSize(9);

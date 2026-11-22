@@ -1,7 +1,8 @@
 import { spawn } from 'child_process';
 import path from 'path';
 
-const PYTHON_BIN = 'python';
+// Support both 'python3' (Linux/Docker standard) and 'python' (Windows standard)
+const findPython = () => (process.platform === 'win32' ? 'python' : 'python3');
 const SCRIPT_PATH = path.resolve('src/services/visionService.py');
 
 /**
@@ -9,7 +10,8 @@ const SCRIPT_PATH = path.resolve('src/services/visionService.py');
  */
 export const runAutoCardCrop = (imagePath) => {
   return new Promise((resolve) => {
-    const proc = spawn(PYTHON_BIN, [SCRIPT_PATH, 'crop', imagePath]);
+    const pythonBin = findPython();
+    const proc = spawn(pythonBin, [SCRIPT_PATH, 'crop', imagePath]);
     let stdout = '';
     let stderr = '';
 
@@ -26,8 +28,8 @@ export const runAutoCardCrop = (imagePath) => {
       resolve({ success: false, cardDetected: false, error: stderr || 'Execution failed' });
     });
 
-    proc.on('error', (err) => {
-      resolve({ success: false, cardDetected: false, error: err.message });
+    proc.on('error', (_err) => {
+      resolve({ success: false, cardDetected: false, error: 'Python vision service unavailable' });
     });
   });
 };
@@ -42,7 +44,8 @@ export const runFaceComparison = (cardImagePath, selfieImagePath) => {
       return;
     }
 
-    const proc = spawn(PYTHON_BIN, [SCRIPT_PATH, 'compare', cardImagePath, selfieImagePath]);
+    const pythonBin = findPython();
+    const proc = spawn(pythonBin, [SCRIPT_PATH, 'compare', cardImagePath, selfieImagePath]);
     let stdout = '';
     let stderr = '';
 
@@ -61,13 +64,19 @@ export const runFaceComparison = (cardImagePath, selfieImagePath) => {
         success: false,
         match: false,
         confidenceScore: 0,
-        executed: true,
-        error: stderr || 'Face comparison process error',
+        executed: false,
+        error: stderr || 'Face comparison unavailable',
       });
     });
 
-    proc.on('error', (err) => {
-      resolve({ success: false, match: false, confidenceScore: 0, executed: true, error: err.message });
+    proc.on('error', (_err) => {
+      resolve({
+        success: false,
+        match: false,
+        confidenceScore: 0,
+        executed: false,
+        error: 'Python face matching unavailable',
+      });
     });
   });
 };

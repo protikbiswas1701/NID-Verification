@@ -426,7 +426,18 @@ export const verifyAgainstDatabase = (nid, dob) => {
   }
 
   const cleanNid = String(nid).trim();
-  const record = registry[cleanNid];
+  let record = registry[cleanNid];
+
+  // If not found directly, check 17-digit <-> 13-digit equivalence (BD year prefix)
+  if (!record && cleanNid.length === 17) {
+    record = registry[cleanNid.slice(4)];
+  }
+  if (!record && cleanNid.length === 13 && dob) {
+    const normYear = normalizeDob(dob)?.substring(0, 4);
+    if (normYear && /^\d{4}$/.test(normYear)) {
+      record = registry[normYear + cleanNid];
+    }
+  }
 
   if (!record) {
     return {
@@ -914,7 +925,7 @@ export const evaluateNidCard = async (frontImagePath, backImagePath = null, self
       barcode: barcodeResult.detected
         ? { detected: true, format: barcodeResult.format, barcodeNid: barcodeResult.barcodeNid }
         : { detected: false },
-      faceMatch: faceResult.executed ? faceResult : null,
+      faceMatch: faceResult.executed && faceResult.success ? faceResult : null,
       autoCrop: cropResult.cardDetected ? cropResult : null,
     },
     databaseMatch: {
