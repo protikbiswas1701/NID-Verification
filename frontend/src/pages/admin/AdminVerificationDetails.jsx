@@ -104,9 +104,7 @@ export default function AdminVerificationDetails() {
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               <DocumentCard title="Front side" file={v.frontImage} loader={() => adminApi.file(id, 'front')} />
               <DocumentCard title="Back side" file={v.backImage} loader={() => adminApi.file(id, 'back')} />
-              {v.selfieImage && (
-                <DocumentCard title="Live selfie (eKYC)" file={v.selfieImage} loader={() => adminApi.file(id, 'selfie')} />
-              )}
+              <DocumentCard title="Live selfie (eKYC)" file={v.selfieImage} loader={() => adminApi.file(id, 'selfie')} />
             </div>
           </section>
 

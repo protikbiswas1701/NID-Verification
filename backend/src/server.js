@@ -1,10 +1,18 @@
 import { env } from './config/env.js';
 import { connectDB } from './config/db.js';
 import { getRegistry } from './services/verificationService.js';
+import { syncExistingUploadsToDb } from './utils/files.js';
 import app from './app.js';
 
 const start = async () => {
   await connectDB();
+  // Ensure any files currently on disk are backed up to persistent MongoDB
+  try {
+    await syncExistingUploadsToDb();
+  } catch (syncErr) {
+    console.warn('Uploads backup sync warning:', syncErr.message);
+  }
+
   // Preload citizen registry into memory so first verification request is instant
   try {
     getRegistry();

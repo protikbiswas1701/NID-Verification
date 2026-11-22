@@ -8,21 +8,29 @@ export default function SecureImage({ loader, alt, className = '' }) {
   const [src, setSrc] = useState(null);
   const [state, setState] = useState('loading');
 
-  useEffect(() => {
+  const fetchImage = () => {
     let active = true;
-    let objectUrl = null;
     setState('loading');
     loader()
       .then(({ data }) => {
         if (!active) return;
-        objectUrl = URL.createObjectURL(data);
+        if (!data || data.size === 0) {
+          setState('error');
+          return;
+        }
+        const objectUrl = URL.createObjectURL(data);
         setSrc(objectUrl);
         setState('ready');
       })
-      .catch(() => active && setState('error'));
+      .catch(() => {
+        if (active) setState('error');
+      });
+  };
+
+  useEffect(() => {
+    fetchImage();
     return () => {
-      active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (src) URL.revokeObjectURL(src);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -31,9 +39,19 @@ export default function SecureImage({ loader, alt, className = '' }) {
     <div className={`grid place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100 ${className}`}>
       {state === 'loading' && <Spinner className="text-navy-500" />}
       {state === 'error' && (
-        <div className="flex flex-col items-center gap-1 p-6 text-xs text-slate-500"><ImageOff size={22} />Image unavailable</div>
+        <div className="flex flex-col items-center gap-1.5 p-6 text-xs text-slate-500">
+          <ImageOff size={22} className="text-slate-400" />
+          <span>Image unavailable</span>
+          <button
+            type="button"
+            onClick={fetchImage}
+            className="mt-1 text-[11px] font-semibold text-navy-600 hover:underline"
+          >
+            Retry
+          </button>
+        </div>
       )}
-      {state === 'ready' && <img src={src} alt={alt} className="h-full w-full object-contain" />}
+      {state === 'ready' && src && <img src={src} alt={alt} className="h-full w-full object-contain" />}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import Verification, { VERIFICATION_STATUSES } from '../models/Verification.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { HttpError } from '../utils/httpError.js';
 import { generateRequestId } from '../utils/requestId.js';
-import { removeStoredFiles, sendPrivateFile } from '../utils/files.js';
+import { persistFilesToDb, removeStoredFiles, sendPrivateFile } from '../utils/files.js';
 import { buildPaginationMeta, escapeRegex, getPagination } from '../utils/query.js';
 import { analyzeVerification } from '../services/aiService.js';
 
@@ -84,6 +84,9 @@ export const createVerification = asyncHandler(async (req, res) => {
         if (!isRequestIdCollision || attempt === 2) throw err;
       }
     }
+
+    // Persist uploaded files into MongoDB so they survive ephemeral container restarts
+    await persistFilesToDb([front, back, selfie].filter(Boolean));
 
     // Automatically trigger fraud detection
     try {

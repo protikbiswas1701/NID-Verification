@@ -6,6 +6,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { HttpError } from '../utils/httpError.js';
 import { generateRequestId } from '../utils/requestId.js';
 import { evaluateNidCard } from '../services/verificationService.js';
+import { persistFilesToDb } from '../utils/files.js';
 import { env } from '../config/env.js';
 
 /**
@@ -65,6 +66,7 @@ export const processBatchZip = asyncHandler(async (req, res) => {
         const targetFilename = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}${path.extname(item.name)}`;
         const targetPath = path.join(env.uploadDir, targetFilename);
         fs.copyFileSync(item.path, targetPath);
+        await persistFilesToDb([{ filename: targetFilename, path: targetPath, mimeType: item.mimeType || 'image/jpeg' }]);
 
         // Run evaluation pipeline
         const analysis = await evaluateNidCard(targetPath, null);

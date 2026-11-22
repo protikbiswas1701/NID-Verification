@@ -99,9 +99,7 @@ export default function Details() {
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               <DocumentCard title="Front side" file={v.frontImage} loader={() => verificationApi.file(id, 'front')} />
               <DocumentCard title="Back side" file={v.backImage} loader={() => verificationApi.file(id, 'back')} />
-              {v.selfieImage && (
-                <DocumentCard title="Live selfie (eKYC)" file={v.selfieImage} loader={() => verificationApi.file(id, 'selfie')} />
-              )}
+              <DocumentCard title="Live selfie (eKYC)" file={v.selfieImage} loader={() => verificationApi.file(id, 'selfie')} />
             </div>
           </section>
         </div>
