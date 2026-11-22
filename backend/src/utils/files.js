@@ -7,6 +7,34 @@ import StoredFile from '../models/StoredFile.js';
 export const storedPath = (filename) => path.join(env.uploadDir, path.basename(filename));
 
 /**
+ * Ensures a stored file exists on local disk. If absent (e.g. after container restart),
+ * seamlessly pulls it from MongoDB permanent storage and restores it to disk.
+ */
+export const ensureFileOnDisk = async (filename) => {
+  if (!filename) return null;
+  const fullPath = storedPath(filename);
+  try {
+    await fs.access(fullPath);
+    return fullPath;
+  } catch {
+    // Disk miss, restore from MongoDB
+  }
+
+  try {
+    const stored = await StoredFile.findOne({ filename: path.basename(filename) });
+    if (stored && stored.data) {
+      await fs.mkdir(env.uploadDir, { recursive: true });
+      await fs.writeFile(fullPath, stored.data);
+      console.log(`[FILES] Restored ${filename} from MongoDB to local disk.`);
+      return fullPath;
+    }
+  } catch (err) {
+    console.warn(`[FILES] Failed to restore ${filename} from MongoDB:`, err.message);
+  }
+  return fullPath;
+};
+
+/**
  * Persists files uploaded to disk into MongoDB for permanent durability across container restarts.
  */
 export const persistFilesToDb = async (files = []) => {

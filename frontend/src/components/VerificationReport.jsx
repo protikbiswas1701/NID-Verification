@@ -259,7 +259,11 @@ export default function VerificationReport({ verification, analysis, onReanalyze
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Blood Group</span>
             <div className="mt-1 flex items-center gap-2">
               <Droplet size={15} className="text-rose-500" />
-              <span className="text-sm font-bold text-slate-900">{extractedData.bloodGroup || 'Not specified'}</span>
+              <span className="text-sm font-bold text-slate-900">
+                {extractedData.bloodGroup && extractedData.bloodGroup !== 'Not specified'
+                  ? extractedData.bloodGroup
+                  : databaseMatch?.registryDetails?.bloodGroup || 'Not specified'}
+              </span>
             </div>
           </div>
         </div>
@@ -284,7 +288,7 @@ export default function VerificationReport({ verification, analysis, onReanalyze
             )}
           </div>
           {databaseMatch.isRegistered && databaseMatch.registryDetails && (
-            <div className="mt-2.5 grid grid-cols-2 gap-2 text-xs text-slate-600">
+            <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-600">
               <div>
                 <span className="text-slate-400">Registered DOB: </span>
                 <span className="font-semibold text-slate-800">{databaseMatch.registryDetails.dob || 'N/A'}</span>
@@ -293,6 +297,12 @@ export default function VerificationReport({ verification, analysis, onReanalyze
                 <span className="text-slate-400">Registered Mobile: </span>
                 <span className="font-semibold text-slate-800">{databaseMatch.registryDetails.phoneMasked || 'N/A'}</span>
               </div>
+              {databaseMatch.registryDetails.bloodGroup && (
+                <div>
+                  <span className="text-slate-400">Registered Blood Group: </span>
+                  <span className="font-semibold text-rose-600 font-bold">{databaseMatch.registryDetails.bloodGroup}</span>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -1,4 +1,4 @@
-import { storedPath } from '../utils/files.js';
+import { storedPath, ensureFileOnDisk } from '../utils/files.js';
 import { evaluateNidCard } from './verificationService.js';
 
 export const isAiServiceEnabled = () => true;
@@ -10,9 +10,9 @@ export const isAiServiceEnabled = () => true;
  */
 export const analyzeVerification = async (verification) => {
   try {
-    const frontPath = storedPath(verification.frontImage.filename);
-    const backPath = verification.backImage ? storedPath(verification.backImage.filename) : null;
-    const selfiePath = verification.selfieImage ? storedPath(verification.selfieImage.filename) : null;
+    const frontPath = verification.frontImage ? await ensureFileOnDisk(verification.frontImage.filename) : null;
+    const backPath = verification.backImage ? await ensureFileOnDisk(verification.backImage.filename) : null;
+    const selfiePath = verification.selfieImage ? await ensureFileOnDisk(verification.selfieImage.filename) : null;
 
     const result = await evaluateNidCard(frontPath, backPath, selfiePath);
 

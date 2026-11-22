@@ -192,18 +192,18 @@ export const parseOcrCardText = (fullText, confidence = 0) => {
     if (capsLine) name = capsLine;
   }
 
-  // 4. Extract Blood Group
+  // 4. Extract Blood Group (handles OCR zero substitution where 'O+' is recognized as '0+')
   let bloodGroup = null;
-  // Try labeled patterns first: "Blood Group: O+", "রক্তের গ্রুপ / Blood Group: B-", etc.
-  const bgLabeledMatch = fullText.match(/(?:Blood\s*Group|রক্তের\s*গ্রুপ)[^A-Za-z0-9]*\s*((?:AB|A|B|O)\s*[+-])/i);
+  // Try labeled patterns first: "Blood Group: O+", "Blood Group: 0+", "রক্তের গ্রুপ / Blood Group: B-", etc.
+  const bgLabeledMatch = fullText.match(/(?:Blood\s*Group|রক্তের\s*গ্রুপ)[^A-Za-z0-9]*\s*((?:AB|A|B|O|0)\s*[+-])/i);
   if (bgLabeledMatch) {
-    bloodGroup = bgLabeledMatch[1].replace(/\s/g, '').toUpperCase();
+    bloodGroup = bgLabeledMatch[1].replace(/\s/g, '').toUpperCase().replace(/^0/, 'O');
   }
   // Fallback: standalone blood group pattern anywhere in text
   if (!bloodGroup) {
-    const bgMatch = fullText.match(/(?:^|[\s:.,/])((?:AB|A|B|O)[+-])(?:$|[\s:.,/\n])/im);
+    const bgMatch = fullText.match(/(?:^|[\s:.,/|])((?:AB|A|B|O|0)[+-])(?:$|[\s:.,/|\n])/im);
     if (bgMatch) {
-      bloodGroup = bgMatch[1].toUpperCase();
+      bloodGroup = bgMatch[1].toUpperCase().replace(/^0/, 'O');
     }
   }
 
@@ -717,6 +717,20 @@ export const evaluateNidCard = async (frontImagePath, backImagePath = null, self
     let isMatch = false;
     let matchReason = '';
 
+    // Tokenized fuzzy name matching (handles OCR trailing noise like extra character)
+    let nameMatches = false;
+    if (bName && cName) {
+      const bTokens = bName.split(/[\s,.-]+/).filter((w) => w.length >= 2);
+      const cTokens = cName.split(/[\s,.-]+/).filter((w) => w.length >= 2);
+      const common = bTokens.filter((t) => cTokens.includes(t));
+      if (common.length >= 2 || bName.includes(cName) || cName.includes(bName)) {
+        nameMatches = true;
+      }
+    }
+
+    const dobMatches = Boolean(bDob && cDob && bDob === cDob);
+    const pinYearMatches = Boolean(bPin && cDob && bPin.startsWith(cDob.substring(0, 4)));
+
     // Case 1: Exact NID match (for 13 or 17 digit cards)
     if (bPin && extracted.nid && (bPin === extracted.nid || bPin.endsWith(extracted.nid))) {
       isMatch = true;
@@ -724,16 +738,13 @@ export const evaluateNidCard = async (frontImagePath, backImagePath = null, self
     }
     // Case 2: Smart Card (Front has 10 digits, Back barcode has 17-digit PIN + Name + DOB)
     else if (extracted.nidType === 'SMART_10_DIGIT' || (extracted.nid && extracted.nid.length === 10)) {
-      // In BD Smart Cards, PDF417 encodes 17-digit PIN + Name + DOB
-      const nameMatches = Boolean(bName && cName && (bName.includes(cName) || cName.includes(bName)));
-      const dobMatches = Boolean(bDob && cDob && bDob === cDob);
-      // Also check if PIN starts with birth year
-      const pinYearMatches = Boolean(bPin && cDob && bPin.startsWith(cDob.substring(0, 4)));
-
-      if ((nameMatches && dobMatches) || (dobMatches && pinYearMatches) || (nameMatches && pinYearMatches)) {
+      if ((nameMatches && dobMatches) || (dobMatches && pinYearMatches) || (nameMatches && pinYearMatches) || dobMatches || nameMatches) {
         isMatch = true;
         matchReason = `Smart Card PDF417 authenticated: Encoded citizen details (${barcodeResult.barcodeName || ''} · ${barcodeResult.barcodeDob || ''}) match front card.`;
       }
+    } else if (nameMatches && dobMatches) {
+      isMatch = true;
+      matchReason = `Barcode demographic data (${barcodeResult.barcodeName} · ${barcodeResult.barcodeDob}) matches front card credentials.`;
     }
 
     if (isMatch) {
@@ -743,11 +754,15 @@ export const evaluateNidCard = async (frontImagePath, backImagePath = null, self
         details: matchReason,
       });
       score += 20;
-    } else if (bPin && extracted.nid) {
+    } else if (
+      // Only flag critical forgery if BOTH are 17/13 digits and contradict, OR if DOBs explicitly contradict
+      ((extracted.nid?.length === 17 || extracted.nid?.length === 13) && bPin && bPin !== extracted.nid) ||
+      (bDob && cDob && bDob !== cDob && !dobMatches)
+    ) {
       checks.push({
         title: 'Back 2D Barcode / PDF417 Cross-Check',
         status: 'FAILED',
-        details: `Critical Forgery Flag: Barcode demographic data (${bPin}) contradicts front card credentials (${extracted.nid}).`,
+        details: `Critical Forgery Flag: Barcode demographic data (${bPin || bDob}) contradicts front card credentials (${extracted.nid || cDob}).`,
       });
       fraudIndicators.push(`Back barcode data contradicts front card details.`);
       score -= 50;
